@@ -21,6 +21,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
+
+// Package circuitbreaker implements the [Circuit Breaker] pattern in Go
+//
+// [Circuit Breaker]: https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker
 package circuitbreaker
 
 import (
@@ -30,19 +34,30 @@ import (
 	"time"
 )
 
+// State represent the state of the CircuitBreaker
 type State int
 
 const (
+	// requests allowed
 	StateClosed State = iota
+
+	// only a certain number of requests allowed to probe success
 	StateHalfOpen
+
+	// requests fail immediately
 	StateOpen
 )
 
 var (
+	// ErrTooManyRequests is returned when the CircuitBreaker state is half open
+	// and the current request count is over the maxRequests
 	ErrTooManyRequests = errors.New("too many requests")
-	ErrOpenState       = errors.New("circuit breaker is open")
+
+	// ErrOpenState is returned when the CircuitBreaker state is open
+	ErrOpenState = errors.New("circuit breaker is open")
 )
 
+// String implements the stringer interface
 func (s State) String() string {
 	switch s {
 	case StateClosed:
@@ -56,6 +71,9 @@ func (s State) String() string {
 	}
 }
 
+// Counts holds the number of requests and their successes/failures.
+// CircuitBreaker clears the internal Counts either on change of state or at
+// the closed-state intervals
 type Counts struct {
 	CurrRequests         uint32
 	TotalSuccesses       uint32
@@ -65,14 +83,38 @@ type Counts struct {
 }
 
 type Config struct {
-	MaxRequests   uint32
-	Interval      time.Duration
-	Timeout       time.Duration
-	ShouldTrip    func(counts Counts) bool
+	// MaxRequests is the maximum number of requests allowed to pass through
+	// when the CircuitBreaker is half-open. If it is set to zero (i.e. no value
+	// is set), only 1 request is allowed as the default
+	MaxRequests uint32
+
+	// Interval is the interval in the closed state after which the Counts will
+	// be reset to zero
+	Interval time.Duration
+
+	// Timeout is the period of the open state after which the state of the
+	// CircuitBreaker becomes half-open. If Timeout is 0, the timout value of
+	// CircuitBreaker is set to 60 seconds as a default
+	Timeout time.Duration
+
+	// ShouldTrip is called with Counts whenever a request fails in the closed
+	// state. If ShouldTrip returns true, CircuitBreaker is set to the open
+	// state. If ShouldTrip is nil, a default callback is used which checks
+	// that number of consecutive failures is not more than 5.
+	ShouldTrip func(counts Counts) bool
+
+	// OnStateChange is called whenever the state of CircuitBreaker changes
 	OnStateChange func(from State, to State)
-	IsSuccessful  func(err error) bool
+
+	// IsSuccessful is called with the error that's returned from a request. If
+	// it returns true, the error is counted as a success. Otherwise, the error
+	// is counted as a failure. If IsSuccessful is used, a default callback is
+	// used which returns false for all non-nil errors
+	IsSuccessful func(err error) bool
 }
 
+// CircuitBreaker is a state machine  that prevents making requests that are
+// likely to fail
 type CircuitBreaker struct {
 	maxRequests   uint32
 	interval      time.Duration
@@ -114,6 +156,7 @@ func (cfg *Config) setDefaults() {
 	}
 }
 
+// New returns a new instance of CircuitBreaker with the given configuration
 func New(cfg Config) *CircuitBreaker {
 	cfg.setDefaults()
 
@@ -129,6 +172,7 @@ func New(cfg Config) *CircuitBreaker {
 	return cb
 }
 
+// State returns the current state of the CircuitBreaker
 func (cb *CircuitBreaker) State() State {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
@@ -139,6 +183,7 @@ func (cb *CircuitBreaker) State() State {
 
 }
 
+// Counts returns the internal counters
 func (cb *CircuitBreaker) Counts() Counts {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
@@ -163,6 +208,10 @@ func (cb *CircuitBreaker) beforeRequest() (uint64, error) {
 	return generation, nil
 }
 
+// Do runs the given request if the CircuitBreaker accepts it. Do returns an
+// error instantly if the CircuitBreaker is opened. Otherwise, Do returns the
+// result of the request. If a panic occurs in the request callback, the
+// CircuitBreaker handles it as an error and causes the same panic again.
 func (cb *CircuitBreaker) Do(req func() (interface{}, error)) (interface{}, error) {
 	generation, err := cb.beforeRequest()
 	if err != nil {
