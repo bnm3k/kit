@@ -11,7 +11,7 @@ type TwoStepCircuitBreaker struct {
 // with the given configuration.
 func NewTwoStepCircuitBreaker(cfg Config) *TwoStepCircuitBreaker {
 	return &TwoStepCircuitBreaker{
-		cb: New(cfg),
+		cb: NewCircuitBreaker(cfg),
 	}
 }
 

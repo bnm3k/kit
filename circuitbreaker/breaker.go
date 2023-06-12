@@ -156,8 +156,8 @@ func (cfg *Config) setDefaults() {
 	}
 }
 
-// New returns a new instance of CircuitBreaker with the given configuration
-func New(cfg Config) *CircuitBreaker {
+// NewCircuitBreaker returns a new instance of CircuitBreaker with the given configuration
+func NewCircuitBreaker(cfg Config) *CircuitBreaker {
 	cfg.setDefaults()
 
 	cb := &CircuitBreaker{
