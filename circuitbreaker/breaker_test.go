@@ -88,7 +88,7 @@ func newCustom() *CircuitBreaker {
 		stateChange = StateChange{from, to}
 	}
 
-	return NewCircuitBreaker(customSt)
+	return New(customSt)
 }
 
 func newNegativeDurationCB() *CircuitBreaker {
@@ -96,7 +96,7 @@ func newNegativeDurationCB() *CircuitBreaker {
 	negativeSt.Interval = time.Duration(-30) * time.Second
 	negativeSt.Timeout = time.Duration(-90) * time.Second
 
-	return NewCircuitBreaker(negativeSt)
+	return New(negativeSt)
 }
 
 func init() {
@@ -116,7 +116,7 @@ func TestStateConstants(t *testing.T) {
 }
 
 func TestNewCircuitBreaker(t *testing.T) {
-	defaultCB := NewCircuitBreaker(Config{})
+	defaultCB := New(Config{})
 	assert.Equal(t, uint32(1), defaultCB.maxRequests)
 	assert.Equal(t, time.Duration(0), defaultCB.interval)
 	assert.Equal(t, time.Duration(60)*time.Second, defaultCB.timeout)
@@ -148,7 +148,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 }
 
 func TestDefaultCircuitBreaker(t *testing.T) {
-	defaultCB := NewCircuitBreaker(Config{})
+	defaultCB := New(Config{})
 	for i := 0; i < 5; i++ {
 		assert.Nil(t, fail(defaultCB))
 	}
@@ -203,7 +203,7 @@ func TestDefaultCircuitBreaker(t *testing.T) {
 }
 
 func TestCustomCircuitBreaker(t *testing.T) {
-	defaultCB := NewCircuitBreaker(Config{})
+	defaultCB := New(Config{})
 	for i := 0; i < 5; i++ {
 		assert.Nil(t, succeed(customCB))
 		assert.Nil(t, fail(customCB))
@@ -253,7 +253,7 @@ func TestCustomCircuitBreaker(t *testing.T) {
 }
 
 func TestPanicInRequest(t *testing.T) {
-	defaultCB := NewCircuitBreaker(Config{})
+	defaultCB := New(Config{})
 	assert.Panics(t, func() {
 		req := func() (interface{}, error) {
 			panic("oops")
@@ -284,7 +284,7 @@ func TestCustomIsSuccessful(t *testing.T) {
 	isSuccessful := func(error) bool {
 		return true
 	}
-	cb := NewCircuitBreaker(Config{IsSuccessful: isSuccessful})
+	cb := New(Config{IsSuccessful: isSuccessful})
 
 	for i := 0; i < 5; i++ {
 		assert.Nil(t, fail(cb))

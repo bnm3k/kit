@@ -6,7 +6,7 @@ type TwoStepCircuitBreaker struct {
 
 func NewTwoStepCircuitBreaker(cfg Config) *TwoStepCircuitBreaker {
 	return &TwoStepCircuitBreaker{
-		cb: NewCircuitBreaker(cfg),
+		cb: New(cfg),
 	}
 }
 

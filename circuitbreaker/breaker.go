@@ -114,7 +114,7 @@ func (cfg *Config) setDefaults() {
 	}
 }
 
-func NewCircuitBreaker(cfg Config) *CircuitBreaker {
+func New(cfg Config) *CircuitBreaker {
 	cfg.setDefaults()
 
 	cb := &CircuitBreaker{
