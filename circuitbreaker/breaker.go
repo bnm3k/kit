@@ -76,10 +76,6 @@ func (c *Counts) onFailure() {
 	c.ConsecutiveSuccesses = 0
 }
 
-func (c *Counts) onRequest() {
-	c.CurrRequests++
-}
-
 func (c *Counts) clear() {
 	c.CurrRequests = 0
 	c.TotalSuccesses = 0
@@ -261,7 +257,7 @@ func (cb *CircuitBreaker) beforeRequest() (uint64, error) {
 		return generation, ErrTooManyRequests
 	}
 
-	cb.counts.onRequest()
+	cb.counts.CurrRequests++
 	return generation, nil
 }
 
