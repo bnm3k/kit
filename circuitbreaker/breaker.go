@@ -35,7 +35,7 @@ import (
 )
 
 // State represent the state of the CircuitBreaker
-type State int
+type State uint32
 
 const (
 	// requests allowed
@@ -76,8 +76,6 @@ func (s State) String() string {
 // the closed-state intervals
 type Counts struct {
 	CurrRequests         uint32
-	TotalSuccesses       uint32
-	TotalFailures        uint32
 	ConsecutiveSuccesses uint32
 	ConsecutiveFailures  uint32
 }
@@ -123,7 +121,7 @@ type CircuitBreaker struct {
 	onStateChange            func(from State, to State)
 	isSuccessful             func(err error) bool
 
-	mutex      sync.Mutex
+	mu         sync.Mutex
 	state      State
 	generation uint64
 	counts     Counts
@@ -174,8 +172,8 @@ func NewCircuitBreaker(cfg Config) *CircuitBreaker {
 
 // State returns the current state of the CircuitBreaker
 func (cb *CircuitBreaker) State() State {
-	cb.mutex.Lock()
-	defer cb.mutex.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	now := time.Now()
 	state, _ := cb.currentState(now)
@@ -185,15 +183,15 @@ func (cb *CircuitBreaker) State() State {
 
 // Counts returns the internal counters
 func (cb *CircuitBreaker) Counts() Counts {
-	cb.mutex.Lock()
-	defer cb.mutex.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	return cb.counts
 }
 
 func (cb *CircuitBreaker) beforeRequest() (uint64, error) {
-	cb.mutex.Lock()
-	defer cb.mutex.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	now := time.Now()
 	state, generation := cb.currentState(now)
@@ -282,8 +280,8 @@ func (cb *CircuitBreaker) setState(newState State, now time.Time) {
 
 func (cb *CircuitBreaker) afterRequest(before uint64, success bool) {
 	// if state is Open, this function should not be called
-	cb.mutex.Lock()
-	defer cb.mutex.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	now := time.Now()
 	state, generation := cb.currentState(now)
@@ -292,7 +290,6 @@ func (cb *CircuitBreaker) afterRequest(before uint64, success bool) {
 	}
 
 	if success { // on success
-		cb.counts.TotalSuccesses++
 		cb.counts.ConsecutiveSuccesses++
 		cb.counts.ConsecutiveFailures = 0
 		if cb.counts.ConsecutiveSuccesses >= cb.maxRequestsWhileHalfOpen {
@@ -301,7 +298,6 @@ func (cb *CircuitBreaker) afterRequest(before uint64, success bool) {
 	} else { // on failure
 		switch state {
 		case StateClosed:
-			cb.counts.TotalFailures++
 			cb.counts.ConsecutiveFailures++
 			cb.counts.ConsecutiveSuccesses = 0
 			if cb.shouldTrip(cb.counts) {

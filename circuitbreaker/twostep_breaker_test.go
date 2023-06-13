@@ -35,27 +35,27 @@ func TestTwoStepCircuitBreaker(t *testing.T) {
 	}
 
 	assert.Equal(t, StateClosed, tscb.State())
-	assert.Equal(t, Counts{5, 0, 5, 0, 5}, tscb.cb.counts)
+	assert.Equal(t, Counts{5, 0, 5}, tscb.cb.counts)
 
 	assert.Nil(t, succeed2Step(tscb))
 	assert.Equal(t, StateClosed, tscb.State())
-	assert.Equal(t, Counts{6, 1, 5, 1, 0}, tscb.cb.counts)
+	assert.Equal(t, Counts{6, 1, 0}, tscb.cb.counts)
 
 	assert.Nil(t, fail2Step(tscb))
 	assert.Equal(t, StateClosed, tscb.State())
-	assert.Equal(t, Counts{7, 1, 6, 0, 1}, tscb.cb.counts)
+	assert.Equal(t, Counts{7, 0, 1}, tscb.cb.counts)
 
 	// StateClosed to StateOpen
 	for i := 0; i < 5; i++ {
 		assert.Nil(t, fail2Step(tscb)) // 6 consecutive failures
 	}
 	assert.Equal(t, StateOpen, tscb.State())
-	assert.Equal(t, Counts{0, 0, 0, 0, 0}, tscb.cb.counts)
+	assert.Equal(t, Counts{0, 0, 0}, tscb.cb.counts)
 	assert.False(t, tscb.cb.expiry.IsZero())
 
 	assert.Error(t, succeed2Step(tscb))
 	assert.Error(t, fail2Step(tscb))
-	assert.Equal(t, Counts{0, 0, 0, 0, 0}, tscb.cb.counts)
+	assert.Equal(t, Counts{0, 0, 0}, tscb.cb.counts)
 
 	pseudoSleep(tscb.cb, time.Duration(59)*time.Second)
 	assert.Equal(t, StateOpen, tscb.State())
@@ -68,7 +68,7 @@ func TestTwoStepCircuitBreaker(t *testing.T) {
 	// StateHalfOpen to StateOpen
 	assert.Nil(t, fail2Step(tscb))
 	assert.Equal(t, StateOpen, tscb.State())
-	assert.Equal(t, Counts{0, 0, 0, 0, 0}, tscb.cb.counts)
+	assert.Equal(t, Counts{0, 0, 0}, tscb.cb.counts)
 	assert.False(t, tscb.cb.expiry.IsZero())
 
 	// StateOpen to StateHalfOpen
@@ -79,6 +79,6 @@ func TestTwoStepCircuitBreaker(t *testing.T) {
 	// StateHalfOpen to StateClosed
 	assert.Nil(t, succeed2Step(tscb))
 	assert.Equal(t, StateClosed, tscb.State())
-	assert.Equal(t, Counts{0, 0, 0, 0, 0}, tscb.cb.counts)
+	assert.Equal(t, Counts{0, 0, 0}, tscb.cb.counts)
 	assert.True(t, tscb.cb.expiry.IsZero())
 }
