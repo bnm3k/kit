@@ -71,9 +71,9 @@ func fail(cb *CircuitBreaker) error {
 
 func newCustom(stateChange *stateChangeTracker) *CircuitBreaker {
 	var cfg Config
-	cfg.MaxRequests = 3
+	cfg.MaxRequestsWhileHalfOpen = 3
 	cfg.Interval = time.Duration(30) * time.Second
-	cfg.Timeout = time.Duration(90) * time.Second
+	cfg.TimeoutOpenState = time.Duration(90) * time.Second
 	cfg.ShouldTrip = func(counts Counts) bool {
 		numReqs := counts.CurrRequests
 		failureRatio := float64(counts.TotalFailures) / float64(numReqs)
@@ -92,7 +92,7 @@ func newCustom(stateChange *stateChangeTracker) *CircuitBreaker {
 func newNegativeDurationCB() *CircuitBreaker {
 	var negativeSt Config
 	negativeSt.Interval = time.Duration(-30) * time.Second
-	negativeSt.Timeout = time.Duration(-90) * time.Second
+	negativeSt.TimeoutOpenState = time.Duration(-90) * time.Second
 
 	return NewCircuitBreaker(negativeSt)
 }
@@ -110,9 +110,9 @@ func TestStateConstants(t *testing.T) {
 
 func TestNewCircuitBreaker(t *testing.T) {
 	defaultCB := NewCircuitBreaker(Config{})
-	assert.Equal(t, uint32(1), defaultCB.maxRequests)
+	assert.Equal(t, uint32(1), defaultCB.maxRequestsWhileHalfOpen)
 	assert.Equal(t, time.Duration(0), defaultCB.interval)
-	assert.Equal(t, time.Duration(60)*time.Second, defaultCB.timeout)
+	assert.Equal(t, time.Duration(60)*time.Second, defaultCB.timeoutOpenState)
 	assert.NotNil(t, defaultCB.shouldTrip)
 	assert.Nil(t, defaultCB.onStateChange)
 	assert.Equal(t, StateClosed, defaultCB.state)
@@ -120,9 +120,9 @@ func TestNewCircuitBreaker(t *testing.T) {
 	assert.True(t, defaultCB.expiry.IsZero())
 
 	customCB := newCustom(nil)
-	assert.Equal(t, uint32(3), customCB.maxRequests)
+	assert.Equal(t, uint32(3), customCB.maxRequestsWhileHalfOpen)
 	assert.Equal(t, time.Duration(30)*time.Second, customCB.interval)
-	assert.Equal(t, time.Duration(90)*time.Second, customCB.timeout)
+	assert.Equal(t, time.Duration(90)*time.Second, customCB.timeoutOpenState)
 	assert.NotNil(t, customCB.shouldTrip)
 	assert.NotNil(t, customCB.onStateChange)
 	assert.Equal(t, StateClosed, customCB.state)
@@ -130,9 +130,9 @@ func TestNewCircuitBreaker(t *testing.T) {
 	assert.False(t, customCB.expiry.IsZero())
 
 	negativeDurationCB := newNegativeDurationCB()
-	assert.Equal(t, uint32(1), negativeDurationCB.maxRequests)
+	assert.Equal(t, uint32(1), negativeDurationCB.maxRequestsWhileHalfOpen)
 	assert.Equal(t, time.Duration(0)*time.Second, negativeDurationCB.interval)
-	assert.Equal(t, time.Duration(60)*time.Second, negativeDurationCB.timeout)
+	assert.Equal(t, time.Duration(60)*time.Second, negativeDurationCB.timeoutOpenState)
 	assert.NotNil(t, negativeDurationCB.shouldTrip)
 	assert.Nil(t, negativeDurationCB.onStateChange)
 	assert.Equal(t, StateClosed, negativeDurationCB.state)

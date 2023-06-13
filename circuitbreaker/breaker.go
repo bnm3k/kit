@@ -83,19 +83,19 @@ type Counts struct {
 }
 
 type Config struct {
-	// MaxRequests is the maximum number of requests allowed to pass through
-	// when the CircuitBreaker is half-open. If it is set to zero (i.e. no value
-	// is set), only 1 request is allowed as the default
-	MaxRequests uint32
+	// MaxRequestsWhileHalfOpen is the maximum number of requests allowed to
+	// pass through when the CircuitBreaker is half-open. If it is set to zero
+	// (i.e. no value is set), only 1 request is allowed as the default
+	MaxRequestsWhileHalfOpen uint32
 
-	// Interval is the interval in the closed state after which the Counts will
-	// be reset to zero
+	// Interval is the cyclic period/interval whereby the circuit breaker (while
+	// in the closed state) will reset the internal counts
 	Interval time.Duration
 
-	// Timeout is the period of the open state after which the state of the
-	// CircuitBreaker becomes half-open. If Timeout is 0, the timout value of
-	// CircuitBreaker is set to 60 seconds as a default
-	Timeout time.Duration
+	// TimeoutOpenState is the period of the open state after which the state of
+	// the CircuitBreaker becomes half-open. If TimeoutOpenState is 0, the
+	// timeout value of CircuitBreaker is set to 60 seconds as a default
+	TimeoutOpenState time.Duration
 
 	// ShouldTrip is called with Counts whenever a request fails in the closed
 	// state. If ShouldTrip returns true, CircuitBreaker is set to the open
@@ -116,12 +116,12 @@ type Config struct {
 // CircuitBreaker is a state machine  that prevents making requests that are
 // likely to fail
 type CircuitBreaker struct {
-	maxRequests   uint32
-	interval      time.Duration
-	timeout       time.Duration
-	shouldTrip    func(counts Counts) bool
-	onStateChange func(from State, to State)
-	isSuccessful  func(err error) bool
+	maxRequestsWhileHalfOpen uint32
+	interval                 time.Duration
+	timeoutOpenState         time.Duration
+	shouldTrip               func(counts Counts) bool
+	onStateChange            func(from State, to State)
+	isSuccessful             func(err error) bool
 
 	mutex      sync.Mutex
 	state      State
@@ -131,16 +131,16 @@ type CircuitBreaker struct {
 }
 
 func (cfg *Config) setDefaults() {
-	if cfg.MaxRequests == 0 {
-		cfg.MaxRequests = 1
+	if cfg.MaxRequestsWhileHalfOpen == 0 {
+		cfg.MaxRequestsWhileHalfOpen = 1
 	}
 
 	if cfg.Interval <= 0 {
 		cfg.Interval = time.Duration(0) * time.Second
 	}
 
-	if cfg.Timeout <= 0 {
-		cfg.Timeout = time.Duration(60) * time.Second
+	if cfg.TimeoutOpenState <= 0 {
+		cfg.TimeoutOpenState = time.Duration(60) * time.Second
 	}
 
 	if cfg.ShouldTrip == nil {
@@ -161,12 +161,12 @@ func NewCircuitBreaker(cfg Config) *CircuitBreaker {
 	cfg.setDefaults()
 
 	cb := &CircuitBreaker{
-		onStateChange: cfg.OnStateChange,
-		maxRequests:   cfg.MaxRequests,
-		interval:      cfg.Interval,
-		timeout:       cfg.Timeout,
-		shouldTrip:    cfg.ShouldTrip,
-		isSuccessful:  cfg.IsSuccessful,
+		onStateChange:            cfg.OnStateChange,
+		maxRequestsWhileHalfOpen: cfg.MaxRequestsWhileHalfOpen,
+		interval:                 cfg.Interval,
+		timeoutOpenState:         cfg.TimeoutOpenState,
+		shouldTrip:               cfg.ShouldTrip,
+		isSuccessful:             cfg.IsSuccessful,
 	}
 	cb.toNewGeneration(time.Now())
 	return cb
@@ -200,7 +200,7 @@ func (cb *CircuitBreaker) beforeRequest() (uint64, error) {
 
 	if state == StateOpen {
 		return generation, ErrOpenState
-	} else if state == StateHalfOpen && cb.counts.CurrRequests >= cb.maxRequests {
+	} else if state == StateHalfOpen && cb.counts.CurrRequests >= cb.maxRequestsWhileHalfOpen {
 		return generation, ErrTooManyRequests
 	}
 
@@ -245,7 +245,7 @@ func (cb *CircuitBreaker) toNewGeneration(now time.Time) {
 			cb.expiry = now.Add(cb.interval)
 		}
 	case StateOpen:
-		cb.expiry = now.Add(cb.timeout)
+		cb.expiry = now.Add(cb.timeoutOpenState)
 	case StateHalfOpen:
 		cb.expiry = zero
 	}
@@ -295,7 +295,7 @@ func (cb *CircuitBreaker) afterRequest(before uint64, success bool) {
 		cb.counts.TotalSuccesses++
 		cb.counts.ConsecutiveSuccesses++
 		cb.counts.ConsecutiveFailures = 0
-		if cb.counts.ConsecutiveSuccesses >= cb.maxRequests {
+		if cb.counts.ConsecutiveSuccesses >= cb.maxRequestsWhileHalfOpen {
 			cb.setState(StateClosed, now) // no-op if state is already Closed
 		}
 	} else { // on failure
