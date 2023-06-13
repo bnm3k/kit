@@ -32,15 +32,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var customCB *CircuitBreaker
-var negativeDurationCB *CircuitBreaker
-
-type StateChange struct {
+type stateChangeTracker struct {
 	from State
 	to   State
 }
-
-var stateChange StateChange
 
 func pseudoSleep(cb *CircuitBreaker, period time.Duration) {
 	if !cb.expiry.IsZero() {
@@ -74,21 +69,24 @@ func fail(cb *CircuitBreaker) error {
 	return nil
 }
 
-func newCustom() *CircuitBreaker {
-	var customSt Config
-	customSt.MaxRequests = 3
-	customSt.Interval = time.Duration(30) * time.Second
-	customSt.Timeout = time.Duration(90) * time.Second
-	customSt.ShouldTrip = func(counts Counts) bool {
+func newCustom(stateChange *stateChangeTracker) *CircuitBreaker {
+	var cfg Config
+	cfg.MaxRequests = 3
+	cfg.Interval = time.Duration(30) * time.Second
+	cfg.Timeout = time.Duration(90) * time.Second
+	cfg.ShouldTrip = func(counts Counts) bool {
 		numReqs := counts.CurrRequests
 		failureRatio := float64(counts.TotalFailures) / float64(numReqs)
 		return numReqs >= 3 && failureRatio >= 0.6
 	}
-	customSt.OnStateChange = func(from State, to State) {
-		stateChange = StateChange{from, to}
+	cfg.OnStateChange = func(from State, to State) {
+		if stateChange != nil {
+			stateChange.from = from
+			stateChange.to = to
+		}
 	}
 
-	return NewCircuitBreaker(customSt)
+	return NewCircuitBreaker(cfg)
 }
 
 func newNegativeDurationCB() *CircuitBreaker {
@@ -97,11 +95,6 @@ func newNegativeDurationCB() *CircuitBreaker {
 	negativeSt.Timeout = time.Duration(-90) * time.Second
 
 	return NewCircuitBreaker(negativeSt)
-}
-
-func init() {
-	customCB = newCustom()
-	negativeDurationCB = newNegativeDurationCB()
 }
 
 func TestStateConstants(t *testing.T) {
@@ -126,7 +119,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 	assert.Equal(t, Counts{0, 0, 0, 0, 0}, defaultCB.counts)
 	assert.True(t, defaultCB.expiry.IsZero())
 
-	customCB := newCustom()
+	customCB := newCustom(nil)
 	assert.Equal(t, uint32(3), customCB.maxRequests)
 	assert.Equal(t, time.Duration(30)*time.Second, customCB.interval)
 	assert.Equal(t, time.Duration(90)*time.Second, customCB.timeout)
@@ -154,7 +147,6 @@ func TestDefaultCircuitBreaker(t *testing.T) {
 	}
 	assert.Equal(t, StateClosed, defaultCB.State())
 	assert.Equal(t, Counts{5, 0, 5, 0, 5}, defaultCB.counts)
-	return
 
 	assert.Nil(t, succeed(defaultCB))
 	assert.Equal(t, StateClosed, defaultCB.State())
@@ -204,6 +196,8 @@ func TestDefaultCircuitBreaker(t *testing.T) {
 
 func TestCustomCircuitBreaker(t *testing.T) {
 	defaultCB := NewCircuitBreaker(Config{})
+	stateChange := stateChangeTracker{}
+	customCB := newCustom(&stateChange)
 	for i := 0; i < 5; i++ {
 		assert.Nil(t, succeed(customCB))
 		assert.Nil(t, fail(customCB))
@@ -227,13 +221,13 @@ func TestCustomCircuitBreaker(t *testing.T) {
 	assert.Equal(t, StateOpen, customCB.State())
 	assert.Equal(t, Counts{0, 0, 0, 0, 0}, customCB.counts)
 	assert.False(t, customCB.expiry.IsZero())
-	assert.Equal(t, StateChange{StateClosed, StateOpen}, stateChange)
+	assert.Equal(t, stateChangeTracker{StateClosed, StateOpen}, stateChange)
 
 	// StateOpen to StateHalfOpen
 	pseudoSleep(customCB, time.Duration(90)*time.Second)
 	assert.Equal(t, StateHalfOpen, customCB.State())
 	assert.True(t, defaultCB.expiry.IsZero())
-	assert.Equal(t, StateChange{StateOpen, StateHalfOpen}, stateChange)
+	assert.Equal(t, stateChangeTracker{StateOpen, StateHalfOpen}, stateChange)
 
 	assert.Nil(t, succeed(customCB))
 	assert.Nil(t, succeed(customCB))
@@ -249,7 +243,7 @@ func TestCustomCircuitBreaker(t *testing.T) {
 	assert.Equal(t, StateClosed, customCB.State())
 	assert.Equal(t, Counts{0, 0, 0, 0, 0}, customCB.counts)
 	assert.False(t, customCB.expiry.IsZero())
-	assert.Equal(t, StateChange{StateHalfOpen, StateClosed}, stateChange)
+	assert.Equal(t, stateChangeTracker{StateHalfOpen, StateClosed}, stateChange)
 }
 
 func TestPanicInRequest(t *testing.T) {
@@ -265,6 +259,7 @@ func TestPanicInRequest(t *testing.T) {
 }
 
 func TestGeneration(t *testing.T) {
+	customCB := newCustom(nil)
 	pseudoSleep(customCB, time.Duration(29)*time.Second)
 	assert.Nil(t, succeed(customCB))
 	ch := succeedLater(customCB, time.Duration(1500)*time.Millisecond)
@@ -305,6 +300,7 @@ func TestCustomIsSuccessful(t *testing.T) {
 }
 
 func TestCircuitBreakerInParallel(t *testing.T) {
+	customCB := newCustom(nil)
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	ch := make(chan error)
